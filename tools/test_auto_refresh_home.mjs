@@ -231,6 +231,27 @@ async function main() {
   check(afterMove.scrollY === scrollBefore || Math.abs(afterMove.scrollY - scrollBefore) <= 2,
     `滚动位置保持 ${scrollBefore} -> ${afterMove.scrollY}`);
 
+  // ---------------------------------------------------------------- 4b
+  console.log('\n[4b] 刷新期间用户滚动：完成后不回拉到任务开始时的位置');
+  await cdp.eval(`window.scrollTo(0, 320); return true;`);
+  await sleep(300);
+  // 3 张卡片页面太矮（最大滚动 ~255），垫高后才能滚到更深处，场景才有区分度
+  await cdp.eval(`document.body.style.paddingBottom = '3000px'; return true;`);
+  addFile(path_b, 'src/extra/d.js', 'console.log("d")\n');
+  await forceRefresh();                 // 任务启动（异步），期间用户继续滚动
+  const scrolledTo = await cdp.eval(`
+    window.dispatchEvent(new WheelEvent('wheel', { deltaY: 120 }));
+    // 全局 scroll-behavior: smooth 会让两参 scrollTo 变成异步动画，必须用 instant 同步到位
+    window.scrollTo({ top: 900, behavior: 'instant' });
+    return Math.round(window.scrollY);`);
+  check(scrolledTo > 500, `垫高生效，用户实际滚到 ${scrolledTo}`);
+  const st5 = await waitDone();
+  await sleep(600);
+  const afterUserScroll = await homeInfo();
+  check(st5 === 'done', `刷新完成（state=${st5}）`);
+  check(afterUserScroll.scrollY === scrolledTo || Math.abs(afterUserScroll.scrollY - scrolledTo) <= 2,
+    `刷新期间滚到 ${scrolledTo} 后不被拽回（当前 ${afterUserScroll.scrollY}）`);
+
   // ---------------------------------------------------------------- 5
   console.log('\n[5] 连续切换窗口：重复请求合并');
   await goto(`${BASE}/`);

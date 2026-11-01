@@ -415,8 +415,6 @@
         const ids = this.projects.map(p => p.id).filter(Boolean).slice(0, 500);
         if (!ids.length) return;
         this._arBusy = true;
-        // 记录刷新前的滚动位置：列表/热力图都可能因数据变化改变高度
-        const y = window.scrollY;
         Object.assign(this.autoRefresh,
           { state: "running", total: ids.length, done: 0, failed: 0, changed: 0, reason: "" });
         try {
@@ -436,11 +434,16 @@
           this.autoRefresh.total = job.total;
           this.autoRefresh.failed = (job.failed || []).length;
           this.autoRefresh.changed = (job.changed_ids || []).length;
+          // 滚动位置在这一刻才取：任务可能持续几十秒，用户中途滚到哪就该留在哪。
+          // 这里只需要补偿「数据替换导致的高度变化」，取替换前一瞬间的位置即可
+          const y = window.scrollY;
+          const scrollMark = this._userScrollMark;
           // 有项目真的变了才重拉列表与本周拾光（避免无意义的整页重绘）
           if (job.ok > 0) await this.refreshListQuiet();
           if (this.autoRefresh.changed > 0) await this.loadWeekly();
-          // 卡片/本周拾光高度变化会触发浏览器滚动锚定，统一拉回刷新前的位置
-          this.restoreScroll(y);
+          // 卡片/本周拾光高度变化会触发浏览器滚动锚定，统一拉回替换前的位置；
+          // 若替换期间用户仍在滚动（标记变化），尊重用户当前位置，不再回拉
+          if (this._userScrollMark === scrollMark) this.restoreScroll(y);
           this.autoRefresh.state = "done";
           setTimeout(() => {
             if (!this._disposed && this.autoRefresh.state === "done") this.autoRefresh.state = "idle";
@@ -1151,6 +1154,21 @@
       },
     },
     mounted() {
+      // 用户滚动标记：滚轮/触摸/翻页键递增。自动更新完成后据此判断用户
+      // 是否正在滚动，避免把页面硬拉回任务开始时的位置（首页莫名回顶的根因）
+      this._userScrollMark = 0;
+      this._markUserScroll = () => { this._userScrollMark++; };
+      this._markKeyScroll = (e) => {
+        const tag = (e.target.tagName || "").toLowerCase();
+        const typing = tag === "input" || tag === "textarea" || tag === "select" || e.target.isContentEditable;
+        if (typing) return;
+        if (["PageUp", "PageDown", "Home", "End", "ArrowUp", "ArrowDown", " "].includes(e.key)) {
+          this._markUserScroll();
+        }
+      };
+      window.addEventListener("wheel", this._markUserScroll, { passive: true });
+      window.addEventListener("touchmove", this._markUserScroll, { passive: true });
+      window.addEventListener("keydown", this._markKeyScroll);
       // 首屏先渲染库里的旧数据；之后后台批量更新（不阻塞、不闪骨架屏）
       this.load().then(() => {
         if (!this._disposed && this.projects.length) this.autoRefreshStart();
@@ -1227,6 +1245,9 @@
       this._disposed = true;                    // 停止自动更新轮询与回填
       clearTimeout(this._arTimer);
       clearInterval(this._nowTimer);
+      window.removeEventListener("wheel", this._markUserScroll);
+      window.removeEventListener("touchmove", this._markUserScroll);
+      window.removeEventListener("keydown", this._markKeyScroll);
       document.removeEventListener("visibilitychange", this._onVisible);
       window.removeEventListener("focus", this._onFocus);
       window.tlOnWindowResume = null;
