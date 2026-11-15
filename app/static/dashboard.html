@@ -29,6 +29,28 @@
       } catch (e) { /* 隐私模式等读不到 localStorage，按默认外观走 */ }
     })();
   </script>
+  <script>
+    /* 冷启动恢复上次停留的项目标签（配合 common.js 标签栏的 tl-last-tab）：
+       应用重启时固定从 / 进来，这里在首帧渲染前直接跳到原项目页，首页不闪一下。
+       两道守卫：
+       1) 仅真实文档导航（type=navigate，即重启 / 新开窗口）才恢复；
+          F5 重载（type=reload）留在原地，不把手动刷新劫持走；
+          首页自动更新是数据级刷新、不产生文档导航，天然不受影响。
+       2) 目标必须是正整数且仍在 tl-tabs 里（档案已删的标签会被标签栏自动清理）；
+          极端情况下目标已删，详情页自有「不存在/已删除」提示页兜底，不会死循环。 */
+    (function () {
+      try {
+        var nav = performance.getEntriesByType("navigation")[0];
+        if (!nav || nav.type !== "navigate") return;
+        var id = Number(localStorage.getItem("tl-last-tab"));
+        if (!Number.isInteger(id) || id <= 0) return;
+        var tabs;
+        try { tabs = JSON.parse(localStorage.getItem("tl-tabs") || "[]"); } catch (e) { tabs = []; }
+        if (!Array.isArray(tabs) || !tabs.some(function (t) { return t && Number(t.id) === id; })) return;
+        location.replace("/project/" + id);
+      } catch (e) { /* 读不到存储就按无记忆走 */ }
+    })();
+  </script>
   <style>
     /* 主样式表生效前的兜底底色，与 style.css 的 --bg 保持一致（改配色请同步两处） */
     html { background: #f6f7f9; }

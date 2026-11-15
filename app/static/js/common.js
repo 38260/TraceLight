@@ -913,9 +913,12 @@
   //   · 项目标签在你进入详情页时追加到末尾（不打乱你手动拖出来的顺序），
   //     顺序完全由你决定：拖动排序、× / 中键关闭，关当前标签时自动切到相邻标签；
   //   · 顺序存在本机 localStorage["tl-tabs"]，刷新、重启后都保持；
+  //   · 上次停留的标签另存 localStorage["tl-last-tab"]（首页时移除），
+  //     供 dashboard.html 首帧引导脚本在应用重启后跳回原处（见 dashboard.html）；
   //   · 标签只记在本机：换浏览器 / 清缓存即重来，不写档案库、不进导出备份；
   //   · 首次使用（本机还没有标签记录）时用后端「最近开发」预填，打开就有东西可切。
   const TAB_KEY = "tl-tabs";
+  const LAST_TAB_KEY = "tl-last-tab";
   const TABBAR_HIDDEN_KEY = "tl-tabbar-hidden";
 
   function tabbarVisible() {
@@ -1105,6 +1108,13 @@
         try { localStorage.setItem(TAB_KEY, JSON.stringify(this.tabs)); }
         catch (e) { /* 写不了就算了，标签退化为本次会话有效 */ }
       },
+      // 记下当前停留的项目标签，供重启后跳回；回首页时移除，重启后自然落回首页
+      persistLastTab() {
+        try {
+          if (this.curId !== null) localStorage.setItem(LAST_TAB_KEY, String(this.curId));
+          else localStorage.removeItem(LAST_TAB_KEY);
+        } catch (e) { /* 写不了就算了，重启后回首页 */ }
+      },
       // 把当前标签滚进可视区。只动标签条的横向滚动——
       // scrollIntoView 会把整个页面纵向滚动到顶（标签栏是 sticky 在页面顶部），
       // 那样每次切标签页面都会自己跳回顶部，必须手算。
@@ -1132,6 +1142,7 @@
         // 每次切页都刷一遍字典（只查库、开销可忽略），保证悬浮提示的名称/别名不是旧值
         this.ensureNames();
         this.persist();
+        this.persistLastTab();
         this.afterTabsChange();
       },
       // 名称与别名字典：brief 只查库、不做磁盘校验，开销可忽略。
@@ -1229,6 +1240,7 @@
 
         this.tabs = tabs;
         this.persist();
+        this.persistLastTab();
         this.afterTabsChange();
       },
     },
